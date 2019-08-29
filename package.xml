@@ -1,0 +1,20 @@
+<package>
+  <name>ropod_wheel_calibration_tool</name>
+  <version>1.0.0</version>
+  <description>
+    Tool for automating the calibration process of the ROPOD smart wheels
+  </description>
+  <license>GPLv3</license>
+
+  <maintainer email="aleksandar.mitrevski@h-brs.de">Alex Mitrevski</maintainer>
+
+  <buildtool_depend>catkin</buildtool_depend>
+
+  <build_depend>rospy</build_depend>
+  <build_depend>ropod_ros_msgs</build_depend>
+
+  <run_depend>rospy</run_depend>
+  <run_depend>ropod_ros_msgs</run_depend>
+
+  <test_depend>roslaunch</test_depend>
+</package>

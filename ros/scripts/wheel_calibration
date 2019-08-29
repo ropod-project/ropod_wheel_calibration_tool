@@ -1,0 +1,45 @@
+#!/usr/bin/env python
+import sys
+import numpy as np
+
+import rospy
+from ropod_ros_msgs.msg import SmartWheelData
+
+encoder_pivot_measurements = []
+
+def register_sw_measurement(sw_data_msg):
+    measurements = [wheel_data.encoder_pivot for wheel_data in sw_data_msg.sensors]
+    encoder_pivot_measurements.append(measurements)
+
+def avg_measurements(measurements):
+    np_measurements = np.array(measurements)
+    measurement_means = np.apply_along_axis(np.mean, 0, measurements)
+    return measurement_means
+
+if __name__ == '__main__':
+    rospy.init_node('wheel_calibrator')
+    number_of_measurements = rospy.get_param('~number_of_measurements', 50)
+    pivot_file_path = rospy.get_param('~pivot_file_path', '/home/ropod/pivots.cal')
+    wheel_data_sub = rospy.Subscriber('/sw_ethercat_parser/data',
+                                      SmartWheelData,
+                                      register_sw_measurement)
+
+    rospy.loginfo('Collecting encoder measurements')
+    try:
+        while not rospy.is_shutdown() and len(encoder_pivot_measurements) < number_of_measurements:
+            rospy.sleep(0.1)
+
+        if len(encoder_pivot_measurements) < number_of_measurements:
+            rospy.logerr('Not enough measurements received; aborting calibration')
+            sys.exit(1)
+
+        rospy.loginfo('Collected measurements; calculating average')
+        encoder_pivots = avg_measurements(encoder_pivot_measurements)
+        rospy.loginfo('Encoder pivots: {0}'.format(encoder_pivots))
+        try:
+            rospy.loginfo('Saving measurements to {0}'.format(pivot_file_path))
+            np.savetxt(pivot_file_path, encoder_pivots)
+        except IOError as exc:
+            rospy.logerr(str(exc))
+    except (KeyboardInterrupt, SystemExit):
+        rospy.loginfo('Exiting')
