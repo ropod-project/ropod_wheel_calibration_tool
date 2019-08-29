@@ -24,7 +24,7 @@ if __name__ == '__main__':
                                       SmartWheelData,
                                       register_sw_measurement)
 
-    rospy.loginfo('Collecting encoder measurements')
+    rospy.loginfo('Collecting {0} encoder measurements'.format(number_of_measurements))
     try:
         while not rospy.is_shutdown() and len(encoder_pivot_measurements) < number_of_measurements:
             rospy.sleep(0.1)
@@ -38,7 +38,7 @@ if __name__ == '__main__':
         rospy.loginfo('Encoder pivots: {0}'.format(encoder_pivots))
         try:
             rospy.loginfo('Saving measurements to {0}'.format(pivot_file_path))
-            np.savetxt(pivot_file_path, encoder_pivots)
+            np.savetxt(pivot_file_path, encoder_pivots[np.newaxis], fmt='%1.5f', delimiter=', ')
         except IOError as exc:
             rospy.logerr(str(exc))
     except (KeyboardInterrupt, SystemExit):
