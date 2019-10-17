@@ -13,11 +13,6 @@ from collections import namedtuple
 import pysoem
 
 class WheelCalibrator(object):
-    BECKHOFF_VENDOR_ID = 0x0002
-    EK1100_PRODUCT_CODE = 0x044c2c52
-    EL3002_PRODUCT_CODE = 0x0bba3052
-    EL1259_PRODUCT_CODE = 0x04eb3052
-
     def __init__(self, ifname, slave_number):
         self._ifname = ifname
         self._slave_number = slave_number
@@ -29,10 +24,15 @@ class WheelCalibrator(object):
         self._master.do_check_state = False
 
         # TODO: change this to match the SW layout
-        SlaveSet = namedtuple('SlaveSet', 'name product_code config_func')
-        self._expected_slave_layout = {0: SlaveSet('EK1100', self.EK1100_PRODUCT_CODE, None),
-                                       1: SlaveSet('EL3002', self.EL3002_PRODUCT_CODE, None),
-                                       2: SlaveSet('EL1259', self.EL1259_PRODUCT_CODE, self.slave_setup)}
+        SlaveSet = namedtuple('SlaveSet', 'name config_func')
+        self._expected_slave_layout = {0: SlaveSet('EK1100', None),
+                                       1: SlaveSet('EK1122', None),
+                                       2: SlaveSet('SWMC', self.slave_setup if self._slave_number == 2 else None),
+                                       3: SlaveSet('SWMC', self.slave_setup if self._slave_number == 3 else None),
+                                       4: SlaveSet('EK1122', None),
+                                       5: SlaveSet('SWMC', self.slave_setup if self._slave_number == 5 else None),
+                                       6: SlaveSet('SWMC', self.slave_setup if self._slave_number == 6 else None),
+                                       7: SlaveSet('SWMC', None)}
 
     def slave_setup(self, slave_pos):
         slave = self._master.slaves[slave_pos]
@@ -43,7 +43,7 @@ class WheelCalibrator(object):
         while not self._pd_thread_stop_event.is_set():
             self._master.send_processdata()
             self._actual_wkc = self._master.receive_processdata(10000)
-            if not self._actual_wkc == self._master.expected_wkc:
+            if self._actual_wkc != self._master.expected_wkc:
                 print('[ecat_wheel_calibration] Incorrect wkc')
             time.sleep(0.01)
 
@@ -162,8 +162,8 @@ if __name__ == '__main__':
             network_interface_name = sys.argv[1]
             slave_number = int(sys.argv[2])
 
-            WheelCalibrator(network_interface_name, slave_number).run()
             print('[ecat_wheel_calibration] Starting calibration of slave {0}'.format(slave_number))
+            WheelCalibrator(network_interface_name, slave_number).run()
         except Exception as exc:
             print('[ecat_wheel_calibration] Calibration failed: {0}'.format(str(exc)))
             sys.exit(1)
