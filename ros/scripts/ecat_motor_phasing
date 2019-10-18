@@ -48,7 +48,7 @@ class WheelCalibrator(object):
                 print('[ecat_motor_phasing] Incorrect wkc')
             time.sleep(0.01)
 
-    def _calibrate_motor(self, index):
+    def _calibrate_motor(self, motor_id, index):
         self._master.slaves[self._slave_number].sdo_write(index, 8, struct.pack('I', 2))
 
         output = self._master.slaves[self._slave_number].output
@@ -58,13 +58,19 @@ class WheelCalibrator(object):
 
         # the output format is as defined at
         # https://git.ropod.org/ropod/smartwheel/blob/master/utypes.h
-        output = output[0:4] + velocity_setpoint + current_limit_positive + \
-                 current_limit_negative + output[16:]
-        self._master.slaves[2].output = output
+        if motor_id == 1:
+            cmd = output[0:4] + velocity_setpoint + output[8:12] + \
+                  current_limit_positive + current_limit_negative + output[20:]
+        elif motor_id == 2:
+            cmd = output[0:8] + velocity_setpoint + output[12:20] + \
+                  current_limit_positive + current_limit_negative + output[28:]
+        self._master.slaves[self._slave_number].output = cmd
 
         start_time = time.time()
         while (time.time() - start_time) < self._calibration_duration_s:
             time.sleep(0.1)
+
+        self._master.slaves[self._slave_number].output = output
 
         self._master.slaves[self._slave_number].sdo_write(index, 8, struct.pack('I', 0))
         print('[ecat_motor_phasing] Calibration over')
@@ -74,10 +80,10 @@ class WheelCalibrator(object):
         self._master.in_op = True
         try:
             print('[ecat_motor_phasing] Calibrating motor 1')
-            self._calibrate_motor(0x8100)
+            self._calibrate_motor(1, 0x8100)
 
             print('[ecat_motor_phasing] Calibrating motor 2')
-            self._calibrate_motor(0x8101)
+            self._calibrate_motor(2, 0x8101)
         except KeyboardInterrupt:
             print('[ecat_motor_phasing] Calibration interrupted')
 
