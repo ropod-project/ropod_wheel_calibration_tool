@@ -52,7 +52,6 @@ class WheelCalibrator(object):
         self._master.slaves[self._slave_number].sdo_write(index, 8, struct.pack('I', 2))
 
         output = self._master.slaves[self._slave_number].output
-        vel_mode = b'\x02\x00'
         velocity_setpoint = struct.pack('f', 4)
         current_limit_positive = struct.pack('f', 5)
         current_limit_negative = struct.pack('f', -5)
@@ -60,14 +59,19 @@ class WheelCalibrator(object):
         # the output format is as defined at
         # https://git.ropod.org/ropod/smartwheel/blob/master/utypes.h
         if motor_id == 1:
+            print('[ecat_motor_phasing] Setting motor 1 command')
+            vel_mode = b'\x09\x00'
             cmd = vel_mode + output[2:4] + velocity_setpoint + output[8:12] + \
                   current_limit_positive + current_limit_negative + output[20:]
         elif motor_id == 2:
+            print('[ecat_motor_phasing] Setting motor 2 command')
+            vel_mode = b'\x0A\x00'
             cmd = vel_mode + output[2:8] + velocity_setpoint + output[12:20] + \
                   current_limit_positive + current_limit_negative + output[28:]
         self._master.slaves[self._slave_number].output = cmd
 
         start_time = time.time()
+        print('[ecat_motor_phasing] Starting motor calibration')
         while (time.time() - start_time) < self._calibration_duration_s:
             time.sleep(0.1)
 
