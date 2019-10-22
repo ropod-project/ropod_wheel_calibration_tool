@@ -1,0 +1,231 @@
+#!/usr/bin/env python3
+
+'''Script for identifying the optimal motor phasing on smart wheels with firwmare v1015+.
+The entire calibration procedure is described at
+https://git.ropod.org/ropod/smartwheel/blob/master/encoder_calibration_and_motor_phasing.txt
+
+This script takes care of the second part of the calibration procedure, namely
+the part of identifying the optimal motor phasing. Note that each wheel
+has to be calibrated separately.
+
+To calibrate, make sure that an EtherCAT communication with the wheels can be
+established (one can use SOEM's slaveinfo utility for that) and then
+simply run this script as
+
+    sudo ./ecat_motor_phasing [network_interface_name] [slave_number] [duration_s]
+
+where
+* [network_interface_name] is the network interface of the EtherCAT connection
+* [slave_number] is the index of the smart wheel that needs to be calibrated
+  (note: the index expected by this script is zero-based; on the other hand,
+  slaveinfo returns a one-based index).
+* [duration_s] is the duration of the calibration in seconds
+
+After running the script, velocity commands will be sent to the wheel's motors
+individually (in both cases, the command will run for [duration_s] seconds).
+No manual intervention is required during this process.
+
+If the calibration is successful for both motors, the smart wheel is ready to be used.
+
+Acknowledgements: The calibration script has been adapted from
+    https://github.com/bnjmnp/pysoem/blob/master/examples/basic_example.py
+and reuses almost all of the slave setup code in that script.
+'''
+
+import sys
+import struct
+import time
+import threading
+from collections import namedtuple
+
+import pysoem
+
+class WheelCalibrator(object):
+    def __init__(self, ifname, slave_number, calibration_duration_s):
+        self._ifname = ifname
+        self._slave_number = slave_number
+        self._calibration_duration_s = calibration_duration_s
+        self._pd_thread_stop_event = threading.Event()
+        self._ch_thread_stop_event = threading.Event()
+        self._actual_wkc = 0
+        self._master = pysoem.Master()
+        self._master.in_op = False
+        self._master.do_check_state = False
+
+        # TODO: change this to match the SW layout
+        SlaveSet = namedtuple('SlaveSet', 'name config_func')
+        self._expected_slave_layout = {0: SlaveSet('EK1100', None),
+                                       1: SlaveSet('EK1122', None),
+                                       2: SlaveSet('SWMC', self.slave_setup if self._slave_number == 2 else None),
+                                       3: SlaveSet('SWMC', self.slave_setup if self._slave_number == 3 else None),
+                                       4: SlaveSet('EK1122', None),
+                                       5: SlaveSet('SWMC', self.slave_setup if self._slave_number == 5 else None),
+                                       6: SlaveSet('SWMC', self.slave_setup if self._slave_number == 6 else None),
+                                       7: SlaveSet('SWMC', None)}
+
+    def slave_setup(self, slave_pos):
+        print('[ecat_motor_phasing] Setting up slave {0}'.format(slave_pos))
+        slave = self._master.slaves[slave_pos]
+        slave.dc_sync(1, 10000000)
+
+    def _processdata_thread(self):
+        while not self._pd_thread_stop_event.is_set():
+            self._master.send_processdata()
+            self._actual_wkc = self._master.receive_processdata(10000)
+            if self._actual_wkc != self._master.expected_wkc:
+                print('[ecat_motor_phasing] Incorrect wkc')
+            time.sleep(0.01)
+
+    def _calibrate_motor(self, motor_id, index):
+        self._master.slaves[self._slave_number].sdo_write(index, 8, struct.pack('I', 2))
+
+        output = self._master.slaves[self._slave_number].output
+        velocity_setpoint = struct.pack('f', 4)
+        current_limit_positive = struct.pack('f', 5)
+        current_limit_negative = struct.pack('f', -5)
+
+        # the output format is as defined at
+        # https://git.ropod.org/ropod/smartwheel/blob/master/utypes.h
+        if motor_id == 1:
+            print('[ecat_motor_phasing] Setting motor 1 command')
+            vel_mode = b'\x09\x00'
+            cmd = vel_mode + output[2:4] + velocity_setpoint + output[8:12] + \
+                  current_limit_positive + current_limit_negative + output[20:]
+        elif motor_id == 2:
+            print('[ecat_motor_phasing] Setting motor 2 command')
+            vel_mode = b'\x0A\x00'
+            cmd = vel_mode + output[2:8] + velocity_setpoint + output[12:20] + \
+                  current_limit_positive + current_limit_negative + output[28:]
+        self._master.slaves[self._slave_number].output = cmd
+
+        start_time = time.time()
+        print('[ecat_motor_phasing] Starting motor calibration')
+        while (time.time() - start_time) < self._calibration_duration_s:
+            time.sleep(0.1)
+
+        self._master.slaves[self._slave_number].output = output
+
+        self._master.slaves[self._slave_number].sdo_write(index, 8, struct.pack('I', 0))
+        print('[ecat_motor_phasing] Calibration over')
+        self._master.slaves[self._slave_number].sdo_write(0x8fff, 1, struct.pack('B', 1))
+
+    def _pdo_update_loop(self):
+        self._master.in_op = True
+        try:
+            print('[ecat_motor_phasing] Calibrating motor 1')
+            self._calibrate_motor(1, 0x8100)
+
+            print('[ecat_motor_phasing] Calibrating motor 2')
+            self._calibrate_motor(2, 0x8101)
+        except KeyboardInterrupt:
+            print('[ecat_motor_phasing] Calibration interrupted')
+
+    def run(self):
+        self._master.open(self._ifname)
+        if self._master.config_init() <= 0:
+            self._master.close()
+            raise Exception('[ecat_motor_phasing] No slaves found')
+
+        for i, slave in enumerate(self._master.slaves):
+            slave.config_func = self._expected_slave_layout[i].config_func
+            slave.is_lost = False
+
+        self._master.config_map()
+        if self._master.state_check(pysoem.SAFEOP_STATE, 50000) != pysoem.SAFEOP_STATE:
+            self._master.close()
+            raise Exception('[ecat_motor_phasing] Not all slaves reached SAFEOP state')
+
+        self._master.state = pysoem.OP_STATE
+
+        check_thread = threading.Thread(target=self._check_thread)
+        check_thread.start()
+        proc_thread = threading.Thread(target=self._processdata_thread)
+        proc_thread.start()
+
+        self._master.write_state()
+        all_slaves_reached_op_state = False
+
+        # where does the 40 come from?
+        for _ in range(40):
+            self._master.state_check(pysoem.OP_STATE, 50000)
+            if self._master.state == pysoem.OP_STATE:
+                all_slaves_reached_op_state = True
+                break
+
+        if all_slaves_reached_op_state:
+            print('[ecat_motor_phasing] Starting calibration loop')
+            self._pdo_update_loop()
+
+        self._pd_thread_stop_event.set()
+        self._ch_thread_stop_event.set()
+        proc_thread.join()
+        check_thread.join()
+        self._master.state = pysoem.INIT_STATE
+
+        # request INIT state for all slaves
+        self._master.write_state()
+        self._master.close()
+        if not all_slaves_reached_op_state:
+            raise Exception('[ecat_motor_phasing] Not all slaves reached OP state')
+
+    @staticmethod
+    def _check_slave(slave, pos):
+        if slave.state == (pysoem.SAFEOP_STATE + pysoem.STATE_ERROR):
+            print('ERROR: slave {} is in SAFE_OP + ERROR, attempting ack.'.format(pos))
+            slave.state = pysoem.SAFEOP_STATE + pysoem.STATE_ACK
+            slave.write_state()
+        elif slave.state == pysoem.SAFEOP_STATE:
+            print('WARNING: slave {} is in SAFE_OP, try change to OPERATIONAL.'.format(pos))
+            slave.state = pysoem.OP_STATE
+            slave.write_state()
+        elif slave.state > pysoem.NONE_STATE:
+            if slave.reconfig():
+                slave.is_lost = False
+                print('MESSAGE: slave {} reconfigured'.format(pos))
+        elif not slave.is_lost:
+            slave.state_check(pysoem.OP_STATE)
+            if slave.state == pysoem.NONE_STATE:
+                slave.is_lost = True
+                print('ERROR: slave {} lost'.format(pos))
+
+        if slave.is_lost:
+            if slave.state == pysoem.NONE_STATE:
+                if slave.recover():
+                    slave.is_lost = False
+                    print('MESSAGE: slave {} recovered'.format(pos))
+            else:
+                slave.is_lost = False
+                print('MESSAGE: slave {} found'.format(pos))
+
+    def _check_thread(self):
+        while not self._ch_thread_stop_event.is_set():
+            if self._master.in_op and \
+              (self._actual_wkc < self._master.expected_wkc or \
+               self._master.do_check_state):
+                self._master.do_check_state = False
+                self._master.read_state()
+                for i, slave in enumerate(self._master.slaves):
+                    if slave.state != pysoem.OP_STATE:
+                        self._master.do_check_state = True
+                        WheelCalibrator._check_slave(slave, i)
+                if not self._master.do_check_state:
+                    print('[ecat_motor_phasing] OK: all slaves resumed OPERATIONAL.')
+            time.sleep(0.01)
+
+
+if __name__ == '__main__':
+    if len(sys.argv) == 4:
+        try:
+            network_interface_name = sys.argv[1]
+            slave_number = int(sys.argv[2])
+            calibration_duration_s = float(sys.argv[3])
+
+            print('[ecat_motor_phasing] Starting calibration of slave {0}'.format(slave_number))
+            WheelCalibrator(network_interface_name, slave_number, calibration_duration_s).run()
+        except Exception as exc:
+            print(type(exc))
+            print('[ecat_motor_phasing] Calibration failed: {0}'.format(str(exc)))
+            sys.exit(1)
+    else:
+        print('Usage: ecat_motor_phasing ifname slave_number calibration_duration_s')
+        sys.exit(1)
