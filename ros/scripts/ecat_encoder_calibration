@@ -1,7 +1,38 @@
 #!/usr/bin/env python3
 
-'''Calibration script adapted from
-https://github.com/bnjmnp/pysoem/blob/master/examples/basic_example.py
+'''Encoder calibration for smart wheels with firwmare v1015+.
+The entire calibration procedure is described at
+https://git.ropod.org/ropod/smartwheel/blob/master/encoder_calibration_and_motor_phasing.txt
+
+This script takes care of the first part of the calibration procedure, namely
+the encoder calibration. Note that each wheel has to be calibrated separately.
+
+To calibrate, make sure that an EtherCAT communication with the wheels can be
+established (one can use SOEM's slaveinfo utility for that) and then
+simply run this script as
+
+    sudo ./ecat_encoder_calibration [network_interface_name] [slave_number]
+
+where [network_interface_name] is the network interface of the EtherCAT
+connection and [slave_number] is the index of the smart wheel that
+needs to be calibrated (note: the index expected by this script is
+zero-based; on the other hand, slaveinfo returns a one-based index).
+
+After running the script, the current status of the calibration state
+machine for the two motor encoders and the pivot encoder will be printed
+in the form
+
+x - y - z
+
+To calibrate, simply rotate the pivot and then the individual wheels
+until all (x, y, z) reach a state of 7 (success) or 8 (fail).
+
+If the calibration is successful for all encoders, the second stage of the
+calibration (finding the optimal motor phasing) can take place.
+
+Acknowledgements: The calibration script has been adapted from
+    https://github.com/bnjmnp/pysoem/blob/master/examples/basic_example.py
+and reuses almost all of the slave setup code in that script.
 '''
 
 import sys
