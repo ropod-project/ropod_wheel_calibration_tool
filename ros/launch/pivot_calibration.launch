@@ -1,5 +1,5 @@
 <launch>
-    <node name="wheel_calibrator" pkg="ropod_wheel_calibration_tool" type="wheel_calibration" output="screen">
+    <node name="pivot_calibrator" pkg="ropod_wheel_calibration_tool" type="pivot_calibration" output="screen">
         <param name="number_of_measurements" type="int" value="50"/>
         <param name="pivot_file_path" value="/home/ropod/pivots.cal" />
     </node>
