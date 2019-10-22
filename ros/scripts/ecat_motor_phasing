@@ -1,7 +1,35 @@
 #!/usr/bin/env python3
 
-'''Calibration script adapted from
-https://github.com/bnjmnp/pysoem/blob/master/examples/basic_example.py
+'''Script for identifying the optimal motor phasing on smart wheels with firwmare v1015+.
+The entire calibration procedure is described at
+https://git.ropod.org/ropod/smartwheel/blob/master/encoder_calibration_and_motor_phasing.txt
+
+This script takes care of the second part of the calibration procedure, namely
+the part of identifying the optimal motor phasing. Note that each wheel
+has to be calibrated separately.
+
+To calibrate, make sure that an EtherCAT communication with the wheels can be
+established (one can use SOEM's slaveinfo utility for that) and then
+simply run this script as
+
+    sudo ./ecat_motor_phasing [network_interface_name] [slave_number] [duration_s]
+
+where
+* [network_interface_name] is the network interface of the EtherCAT connection
+* [slave_number] is the index of the smart wheel that needs to be calibrated
+  (note: the index expected by this script is zero-based; on the other hand,
+  slaveinfo returns a one-based index).
+* [duration_s] is the duration of the calibration in seconds
+
+After running the script, velocity commands will be sent to the wheel's motors
+individually (in both cases, the command will run for [duration_s] seconds).
+No manual intervention is required during this process.
+
+If the calibration is successful for both motors, the smart wheel is ready to be used.
+
+Acknowledgements: The calibration script has been adapted from
+    https://github.com/bnjmnp/pysoem/blob/master/examples/basic_example.py
+and reuses almost all of the slave setup code in that script.
 '''
 
 import sys
