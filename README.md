@@ -1,5 +1,11 @@
 # ropod_wheel_calibration_tool
 
+Package containing utility scripts for calibrating smart wheels.
+
+The package has two calibration scripts for wheels with firmware v1015+ (`common/scripts/ecat_encoder_calibration` and `common/scripts/ecat_motor_phasing`) as well as a ROS-dependent, firmware-independent script for calibrating the wheel pivot encoders.
+
+The purpose and usage of the calibration scripts are described below.
+
 ## ecat_encoder_calibration (firmware v1015+)
 
 Encoder calibration for smart wheels with firwmare v1015+. The entire calibration procedure is described at https://git.ropod.org/ropod/smartwheel/blob/master/encoder_calibration_and_motor_phasing.txt
