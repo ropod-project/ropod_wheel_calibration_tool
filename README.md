@@ -11,7 +11,7 @@ This script takes care of the first part of the calibration procedure, namely th
 To calibrate, make sure that EtherCAT communication with the wheels can be established (one can use SOEM's `slaveinfo` utility for that) and then simply run this script as
 
 ```
-sudo ./ecat_encoder_calibration [network_interface_name] [slave_number]
+sudo common/scripts/ecat_encoder_calibration [network_interface_name] [slave_number]
 ```
 
 where
@@ -43,7 +43,7 @@ This script takes care of the second part of the calibration procedure, namely t
 To calibrate, make sure that EtherCAT communication with the wheels can be established (one can use SOEM's `slaveinfo` utility for that) and then simply run this script as
 
 ```
-sudo ./ecat_motor_phasing [network_interface_name] [slave_number] [duration_s]
+sudo common/scripts/ecat_motor_phasing [network_interface_name] [slave_number] [duration_s]
 ```
 
 where
